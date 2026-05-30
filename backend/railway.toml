@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# No startCommand here on purpose: Railway's startCommand does NOT do shell variable
+# expansion ($PORT / ${PORT:-8080} are passed literally → uvicorn "invalid port").
+# Omitting it lets the Dockerfile CMD run, which uses a real `sh -c` that expands $PORT.
+restartPolicyType = "ON_FAILURE"

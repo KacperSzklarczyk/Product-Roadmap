@@ -1,0 +1,41 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: roadmap
+      MYSQL_USER: roadmap
+      MYSQL_PASSWORD: roadmap
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroadmap", "-proadmap"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    # Host 8001 → container 8000. Host 8000 collides with an unrelated local container.
+    ports:
+      - "8001:8000"
+    env_file: ./backend/.env
+    environment:
+      # Pass the AI key through from the host shell if set (keeps it out of .env/git).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser calls the backend on the host-published port.
+        VITE_API_URL: http://localhost:8001
+    ports:
+      - "3000:80"
+    environment:
+      PORT: 80
+    depends_on:
+      - backend

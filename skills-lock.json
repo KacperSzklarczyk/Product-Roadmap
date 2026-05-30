@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "openakita/skills@frontend-design": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "2398f80c54226437aef6f2938b37c217d308bb47af3723428208a21aa5daa3df"
+    },
+    "openakita/skills@webapp-testing": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/webapp-testing/SKILL.md",
+      "computedHash": "501c1c03b2ffb4aafa1531022b4ecc34d9c1f02be4496987f10cb1448c76c7b6"
+    },
+    "obra/superpowers@subagent-driven-development": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/superpowers-subagent-dev/SKILL.md",
+      "computedHash": "3e26cf3870a12590c3838a934faafe5ddba8571ded780f8a7d0972979f07525b"
+    },
+    "obra/superpowers@verification-before-completion": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/superpowers-verification/SKILL.md",
+      "computedHash": "b6f6e463a899713ace4880bcf16d5643de6a7f9e2f7dbd38fc572c22a92a3f01"
+    },
+    "obra/superpowers@systematic-debugging": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/superpowers-debugging/SKILL.md",
+      "computedHash": "ee39ee94bb54dacb05804bbb31d9d92645098240fd7151d1d68ebc8fb9099dbe"
+    },
+    "obra/superpowers@executing-plans": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/superpowers-executing-plans/SKILL.md",
+      "computedHash": "7937b9bf80bb6f025ef035e6e02ca5e0c300dab6fc89b1726667d2e3dc1f4629"
+    },
+    "obra/superpowers@writing-plans": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/superpowers-writing-plans/SKILL.md",
+      "computedHash": "6fe8ad2723bf7a05e4f7280ab1a3320c89bc0df5b2cbc1f2608198cca7f9548a"
+    },
+    "obra/superpowers@finishing-a-development-branch": {
+      "source": "openakita/openakita",
+      "sourceType": "github",
+      "skillPath": "skills/superpowers-finishing-branch/SKILL.md",
+      "computedHash": "fec2f624cea59231fe1a804cbeabe8e7f6d5f7b896ececdb8357d74049678c78"
+    }
+  }
+}

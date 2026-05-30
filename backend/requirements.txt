@@ -1,0 +1,11 @@
+fastapi>=0.115,<0.116
+uvicorn[standard]>=0.30,<0.35
+tortoise-orm>=0.21,<0.22
+aerich>=0.7.2,<0.8
+asyncmy>=0.2.9,<0.3
+python-jose[cryptography]>=3.3,<4
+passlib[bcrypt]>=1.7.4,<2
+bcrypt>=4.0,<5
+pydantic-settings>=2.2,<3
+email-validator>=2.1,<3
+anthropic>=0.40,<1
