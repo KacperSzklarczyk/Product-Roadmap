@@ -5,7 +5,7 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { ArrowLeft, KanbanSquare, Map, Settings2, Milestone } from "lucide-react";
+import { ArrowLeft, KanbanSquare, Map, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +16,6 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { to: "board", label: "Board", icon: KanbanSquare },
   { to: "roadmap", label: "Roadmap", icon: Map },
-  { to: "timeline", label: "Timeline", icon: Milestone },
   { to: "settings", label: "Settings", icon: Settings2 },
 ];
 
