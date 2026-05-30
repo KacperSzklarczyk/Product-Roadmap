@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
-import { Plus, Trash2, Milestone as MilestoneIcon } from "lucide-react";
+import { Pencil, Plus, Trash2, Milestone as MilestoneIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +27,9 @@ import {
   useCreateMilestone,
   useDeleteMilestone,
   useMilestones,
+  useUpdateMilestone,
 } from "@/hooks/queries";
-import type { MilestoneStatus } from "@/types";
+import type { Milestone, MilestoneStatus } from "@/types";
 
 const STATUS_VARIANT: Record<MilestoneStatus, "yellow" | "default" | "green"> = {
   planned: "yellow",
@@ -41,40 +42,58 @@ export function TimelinePage() {
   const id = Number(projectId);
   const { data: milestones, isLoading } = useMilestones(id);
   const createMilestone = useCreateMilestone(id);
+  const updateMilestone = useUpdateMilestone(id);
   const deleteMilestone = useDeleteMilestone(id);
 
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [status, setStatus] = useState<MilestoneStatus>("planned");
 
-  function handleCreate(e: FormEvent) {
+  const isEditing = editingId !== null;
+  const saving = createMilestone.isPending || updateMilestone.isPending;
+
+  function openCreate() {
+    setEditingId(null);
+    setTitle("");
+    setDescription("");
+    setDueDate("");
+    setStatus("planned");
+    setOpen(true);
+  }
+
+  function openEdit(m: Milestone) {
+    setEditingId(m.id);
+    setTitle(m.title);
+    setDescription(m.description ?? "");
+    setDueDate(m.due_date ?? "");
+    setStatus(m.status);
+    setOpen(true);
+  }
+
+  function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    createMilestone.mutate(
-      {
-        title,
-        description: description || null,
-        due_date: dueDate || null,
-        status,
-      },
-      {
-        onSuccess: () => {
-          setOpen(false);
-          setTitle("");
-          setDescription("");
-          setDueDate("");
-          setStatus("planned");
-        },
-      },
-    );
+    const payload = {
+      title,
+      description: description || null,
+      due_date: dueDate || null,
+      status,
+    };
+    const onSuccess = () => setOpen(false);
+    if (isEditing) {
+      updateMilestone.mutate({ milestoneId: editingId, payload }, { onSuccess });
+    } else {
+      createMilestone.mutate(payload, { onSuccess });
+    }
   }
 
   return (
     <div>
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-xl font-semibold">Milestones</h2>
-        <Button onClick={() => setOpen(true)} data-testid="new-milestone">
+        <Button onClick={openCreate} data-testid="new-milestone">
           <Plus />
           New milestone
         </Button>
@@ -110,13 +129,23 @@ export function TimelinePage() {
                     </p>
                   )}
                 </div>
-                <button
-                  onClick={() => deleteMilestone.mutate(m.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label="Delete milestone"
-                >
-                  <Trash2 className="size-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => openEdit(m)}
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Edit milestone"
+                    data-testid="edit-milestone"
+                  >
+                    <Pencil className="size-4" />
+                  </button>
+                  <button
+                    onClick={() => deleteMilestone.mutate(m.id)}
+                    className="text-muted-foreground hover:text-destructive"
+                    aria-label="Delete milestone"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
               </Card>
             </li>
           ))}
@@ -130,9 +159,9 @@ export function TimelinePage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New milestone</DialogTitle>
+            <DialogTitle>{isEditing ? "Edit milestone" : "New milestone"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="m-title">Title</Label>
               <Input
@@ -178,8 +207,14 @@ export function TimelinePage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={createMilestone.isPending}>
-                {createMilestone.isPending ? "Creating…" : "Create milestone"}
+              <Button type="submit" disabled={saving}>
+                {saving
+                  ? isEditing
+                    ? "Saving…"
+                    : "Creating…"
+                  : isEditing
+                    ? "Save changes"
+                    : "Create milestone"}
               </Button>
             </DialogFooter>
           </form>
