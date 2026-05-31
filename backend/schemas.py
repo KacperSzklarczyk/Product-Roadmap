@@ -183,6 +183,8 @@ class AskRequest(BaseModel):
 
 class AskResponse(BaseModel):
     answer: str
+    follow_ups: list[str] = []
+    other_topics: list[str] = []
 
 
 class AiFixResponse(BaseModel):

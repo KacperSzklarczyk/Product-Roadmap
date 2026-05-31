@@ -131,6 +131,12 @@ export interface Finding {
   feature_ids: number[];
 }
 
+export interface AskResult {
+  answer: string;
+  follow_ups: string[];
+  other_topics: string[];
+}
+
 export interface AiFixResult {
   summary: string;
   changes: string[];

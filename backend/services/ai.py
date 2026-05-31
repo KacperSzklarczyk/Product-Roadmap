@@ -299,8 +299,47 @@ what to cut or prioritize, reason explicitly with RICE (value) versus effort (co
 milestone dates. If the data does not contain the answer, say so briefly. Never invent features or
 numbers.
 
-Formatting: respond in plain text only — short paragraphs and simple "- " bullet lists. Do NOT use
-Markdown headings (#), bold (**), or backticks; write feature names as plain text."""
+You MUST call answer_question exactly once. Build its fields like this:
+
+answer: Start with "TL;DR: " followed by EXACTLY two sentences that are direct, decisive, and
+immediately actionable — the punchline a busy PM needs first. Then a blank line, then the detailed
+recommendations / reasoning. Respond in plain text only — short paragraphs and simple "- " bullet
+lists. Do NOT use Markdown headings (#), bold (**), or backticks; write feature names as plain text.
+
+follow_ups: exactly 3 questions that drill DEEPER into the SAME topic the user just asked about
+(the natural next things they'd want to know to act on this answer).
+
+other_topics: exactly 3 questions about DIFFERENT aspects of this roadmap not covered by the
+current answer — e.g. capacity/overload, risky bets, milestone feasibility, recent activity,
+sequencing, or what to cut.
+
+Every suggested question must be phrased in the first person as the user would type it, be specific
+to THIS roadmap's data, stay under ~70 characters, and carry no numbering or quotes."""
+
+ANSWER_TOOL = {
+    "name": "answer_question",
+    "description": "Return the roadmap answer plus suggested follow-up questions.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string"},
+            "follow_ups": {"type": "array", "items": {"type": "string"}},
+            "other_topics": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["answer", "follow_ups", "other_topics"],
+    },
+}
+
+
+def _clean_questions(raw: object) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        q = str(item).strip()
+        if q:
+            out.append(q[:120])
+    return out[:3]
 
 
 async def ask_roadmap(
@@ -308,20 +347,33 @@ async def ask_roadmap(
     features: list[Feature],
     milestones: list[Milestone],
     activity: list[AuditLog],
-) -> str:
+) -> dict:
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     context = _roadmap_context(features, milestones, activity)
     response = await client.messages.create(
         model=settings.AI_MODEL,
-        max_tokens=1024,
+        max_tokens=1400,
         system=[
             {"type": "text", "text": ASK_SYSTEM, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": f"ROADMAP DATA:\n{context}", "cache_control": {"type": "ephemeral"}},
         ],
+        tools=[ANSWER_TOOL],
+        tool_choice={"type": "tool", "name": "answer_question"},
         messages=[{"role": "user", "content": question}],
     )
-    parts = [b.text for b in response.content if b.type == "text"]
-    return "\n".join(parts).strip() or "I couldn't generate an answer from the current roadmap data."
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "answer_question":
+            answer = str(block.input.get("answer", "")).strip()
+            return {
+                "answer": answer or "I couldn't generate an answer from the current roadmap data.",
+                "follow_ups": _clean_questions(block.input.get("follow_ups")),
+                "other_topics": _clean_questions(block.input.get("other_topics")),
+            }
+    return {
+        "answer": "I couldn't generate an answer from the current roadmap data.",
+        "follow_ups": [],
+        "other_topics": [],
+    }
 
 
 FIX_SYSTEM = """You resolve a SINGLE product-roadmap finding by proposing concrete edits to

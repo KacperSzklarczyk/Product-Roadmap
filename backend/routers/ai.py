@@ -62,8 +62,8 @@ async def ask_roadmap(
 ) -> AskResponse:
     _require_key()
     features, milestones, activity = await _load(project_id)
-    answer = await ai.ask_roadmap(payload.question, features, milestones, activity)
-    return AskResponse(answer=answer)
+    result = await ai.ask_roadmap(payload.question, features, milestones, activity)
+    return AskResponse(**result)
 
 
 def _apply_feature_update(feature: Feature, upd: dict) -> list[str]:
