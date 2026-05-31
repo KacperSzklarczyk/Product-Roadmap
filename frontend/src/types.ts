@@ -122,6 +122,15 @@ export interface MilestoneInput {
   status?: MilestoneStatus;
 }
 
+export type FindingSeverity = "high" | "medium" | "low";
+
+export interface Finding {
+  severity: FindingSeverity;
+  title: string;
+  rationale: string;
+  feature_ids: number[];
+}
+
 export interface FeatureDraft {
   title: string;
   description: string | null;

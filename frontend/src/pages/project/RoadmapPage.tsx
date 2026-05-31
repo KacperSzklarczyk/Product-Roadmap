@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Download, Flag, Plus } from "lucide-react";
+import { Download, Flag, Plus, ScanSearch, Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GanttChart } from "@/components/roadmap/GanttChart";
+import { ReviewPanel } from "@/components/roadmap/ReviewPanel";
+import { AskPanel } from "@/components/roadmap/AskPanel";
 import { FeatureModal } from "@/components/features/FeatureModal";
 import { MilestoneFormDialog } from "@/components/features/MilestoneFormDialog";
 import { downloadFeaturesCsv } from "@/api/export";
@@ -30,6 +32,8 @@ export function RoadmapPage() {
 
   const [selected, setSelected] = useState<Feature | null>(null);
   const [msDialog, setMsDialog] = useState<MilestoneDialog>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
 
   const isLoading = featuresLoading || milestonesLoading;
   const hasData = (features?.length ?? 0) > 0 || (milestones?.length ?? 0) > 0;
@@ -60,7 +64,15 @@ export function RoadmapPage() {
             </span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setReviewOpen(true)} data-testid="review-btn">
+            <ScanSearch />
+            Review
+          </Button>
+          <Button variant="outline" onClick={() => setAskOpen(true)} data-testid="ask-btn">
+            <Sparkles />
+            Ask AI
+          </Button>
           <Button
             variant="outline"
             onClick={() => setMsDialog({ key: "new", target: null })}
@@ -110,6 +122,19 @@ export function RoadmapPage() {
           milestone={msDialog.target}
         />
       )}
+
+      <ReviewPanel
+        projectId={id}
+        features={features ?? []}
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        onFeatureClick={(f) => {
+          setReviewOpen(false);
+          setSelected(f);
+        }}
+      />
+
+      <AskPanel projectId={id} open={askOpen} onOpenChange={setAskOpen} />
     </div>
   );
 }

@@ -5,11 +5,13 @@ tool call (structured output). The system prompt is prompt-cached. Nothing is
 persisted here — the caller reviews/edits drafts and creates features normally.
 """
 
+from datetime import date
+
 from anthropic import AsyncAnthropic
 
 from config import settings
-from models import FeatureStatus, RoadmapBucket
-from schemas import FeatureDraft
+from models import AuditLog, Feature, FeatureStatus, Milestone, RoadmapBucket
+from schemas import FeatureDraft, Finding
 
 ALLOWED_IMPACT = [0.25, 0.5, 1.0, 2.0, 3.0]
 
@@ -163,3 +165,153 @@ async def draft_features_from_text(text: str) -> list[FeatureDraft]:
             features = block.input.get("features", [])
             return [_normalize(item) for item in features]
     return []
+
+
+# ---------------------------------------------------------------------------
+# Roadmap review + ask (analysis over the project's own data)
+# ---------------------------------------------------------------------------
+def _roadmap_context(
+    features: list[Feature],
+    milestones: list[Milestone],
+    activity: list[AuditLog],
+) -> str:
+    """Render the project's roadmap as compact text for the model to reason over."""
+    lines = [f"Today's date: {date.today().isoformat()}.", "", "## Features (sorted by RICE, highest first)"]
+    if not features:
+        lines.append("(none)")
+    for f in sorted(features, key=lambda x: x.rice_score, reverse=True):
+        desc = f" — {f.description}" if f.description else ""
+        lines.append(
+            f"[{f.id}] {f.title} | bucket={f.roadmap_bucket.value} | status={f.status.value} | "
+            f"reach={f.reach} | impact={f.impact} | confidence={f.confidence}% | "
+            f"effort={f.effort}pm | RICE={f.rice_score}{desc}"
+        )
+
+    lines += ["", "## Milestones"]
+    if not milestones:
+        lines.append("(none)")
+    for m in sorted(milestones, key=lambda x: x.due_date or date.max):
+        lines.append(
+            f"{m.title} | due={m.due_date.isoformat() if m.due_date else 'unset'} | status={m.status.value}"
+        )
+
+    lines += ["", "## Recent activity (newest first)"]
+    if not activity:
+        lines.append("(none)")
+    for a in activity:
+        lines.append(
+            f"{a.created_at.date().isoformat()} | {a.actor.email} | "
+            f"{a.action.value} {a.entity_type.value} | {a.summary or ''}"
+        )
+    return "\n".join(lines)
+
+
+REVIEW_SYSTEM = """You are a senior product-operations reviewer auditing a product roadmap for a
+team that builds GenAI tools for auditors. Audit the roadmap data the user sends and surface
+concrete FINDINGS, the way an auditor would. Look specifically for:
+- Overloaded "Now" bucket: too much summed effort (person-months) to realistically ship soon.
+- Risky bets: high RICE score but low confidence (< 50%).
+- Milestone feasibility: given today's date and milestone due dates, whether the summed effort of
+  the relevant in-flight work can plausibly fit before the milestone.
+- Status/priority mismatches: high-RICE items stuck in backlog; items marked done still in "now".
+- Thin scope: high-impact features with no description.
+
+For each finding provide: severity (high | medium | low), a short title, a one-to-two sentence
+rationale that cites specific numbers, RICE scores, person-months, or dates from the data, and the
+feature_ids it concerns (empty array for roadmap-wide findings). Order findings by severity
+(high first). Be specific and grounded — never invent features or numbers. If the roadmap is
+genuinely healthy, return few or no findings. Call emit_findings exactly once."""
+
+REVIEW_TOOL = {
+    "name": "emit_findings",
+    "description": "Emit the ranked list of roadmap review findings.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "findings": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                        "title": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "feature_ids": {"type": "array", "items": {"type": "integer"}},
+                    },
+                    "required": ["severity", "title", "rationale", "feature_ids"],
+                },
+            }
+        },
+        "required": ["findings"],
+    },
+}
+
+_SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+
+
+async def review_roadmap(
+    features: list[Feature],
+    milestones: list[Milestone],
+    activity: list[AuditLog],
+) -> list[Finding]:
+    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    response = await client.messages.create(
+        model=settings.AI_MODEL,
+        max_tokens=2048,
+        system=[{"type": "text", "text": REVIEW_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        tools=[REVIEW_TOOL],
+        tool_choice={"type": "tool", "name": "emit_findings"},
+        messages=[{"role": "user", "content": _roadmap_context(features, milestones, activity)}],
+    )
+    valid_ids = {f.id for f in features}
+    findings: list[Finding] = []
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "emit_findings":
+            for raw in block.input.get("findings", []):
+                sev = raw.get("severity", "medium")
+                if sev not in _SEVERITY_RANK:
+                    sev = "medium"
+                ids = [int(x) for x in raw.get("feature_ids", []) if int(x) in valid_ids]
+                findings.append(
+                    Finding(
+                        severity=sev,
+                        title=str(raw.get("title", "")).strip()[:200] or "Finding",
+                        rationale=str(raw.get("rationale", "")).strip(),
+                        feature_ids=ids,
+                    )
+                )
+    findings.sort(key=lambda f: _SEVERITY_RANK[f.severity])
+    return findings
+
+
+ASK_SYSTEM = """You are a roadmap analyst assistant for a team building GenAI tools for auditors.
+Answer the user's question about THIS roadmap using only the data provided below. Be concise and
+specific: reference features by title; cite RICE scores, effort (person-months), confidence,
+buckets, and milestone due dates; use the recent activity log when asked what changed. When asked
+what to cut or prioritize, reason explicitly with RICE (value) versus effort (cost) and the
+milestone dates. If the data does not contain the answer, say so briefly. Never invent features or
+numbers.
+
+Formatting: respond in plain text only — short paragraphs and simple "- " bullet lists. Do NOT use
+Markdown headings (#), bold (**), or backticks; write feature names as plain text."""
+
+
+async def ask_roadmap(
+    question: str,
+    features: list[Feature],
+    milestones: list[Milestone],
+    activity: list[AuditLog],
+) -> str:
+    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    context = _roadmap_context(features, milestones, activity)
+    response = await client.messages.create(
+        model=settings.AI_MODEL,
+        max_tokens=1024,
+        system=[
+            {"type": "text", "text": ASK_SYSTEM, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": f"ROADMAP DATA:\n{context}", "cache_control": {"type": "ephemeral"}},
+        ],
+        messages=[{"role": "user", "content": question}],
+    )
+    parts = [b.text for b in response.content if b.type == "text"]
+    return "\n".join(parts).strip() or "I couldn't generate an answer from the current roadmap data."

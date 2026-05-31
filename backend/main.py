@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from database import close_db, init_db
 from routers import (
+    ai,
     audit,
     auth,
     comments,
@@ -44,6 +45,7 @@ app.include_router(members.router)
 app.include_router(comments.router)
 app.include_router(audit.router)
 app.include_router(export.router)
+app.include_router(ai.router)
 
 
 @app.get("/health", tags=["health"])

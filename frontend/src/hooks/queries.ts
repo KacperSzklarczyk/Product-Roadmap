@@ -6,6 +6,7 @@ import {
 import toast from "react-hot-toast";
 
 import { getErrorMessage } from "@/api/client";
+import * as aiApi from "@/api/ai";
 import * as commentsApi from "@/api/comments";
 import * as featuresApi from "@/api/features";
 import * as membersApi from "@/api/members";
@@ -163,6 +164,22 @@ export function useAiDraft(projectId: number) {
   const onError = useToastError();
   return useMutation({
     mutationFn: (text: string) => featuresApi.aiDraftFeatures(projectId, text),
+    onError,
+  });
+}
+
+export function useReviewRoadmap(projectId: number) {
+  const onError = useToastError();
+  return useMutation({
+    mutationFn: () => aiApi.reviewRoadmap(projectId),
+    onError,
+  });
+}
+
+export function useAskRoadmap(projectId: number) {
+  const onError = useToastError();
+  return useMutation({
+    mutationFn: (question: string) => aiApi.askRoadmap(projectId, question),
     onError,
   });
 }

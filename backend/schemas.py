@@ -164,6 +164,28 @@ class AiDraftResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# AI roadmap review + ask
+# ---------------------------------------------------------------------------
+class Finding(BaseModel):
+    severity: str  # high | medium | low
+    title: str
+    rationale: str
+    feature_ids: list[int] = []
+
+
+class AiReviewResponse(BaseModel):
+    findings: list[Finding]
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class AskResponse(BaseModel):
+    answer: str
+
+
+# ---------------------------------------------------------------------------
 # Milestones
 # ---------------------------------------------------------------------------
 class MilestoneCreate(BaseModel):
