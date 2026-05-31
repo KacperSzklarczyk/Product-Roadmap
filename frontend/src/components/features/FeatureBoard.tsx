@@ -21,6 +21,8 @@ import type { Feature, FeatureReorderItem } from "@/types";
 export interface BoardColumn {
   key: string;
   label: string;
+  /** When true, this column always displays highest-RICE first (ignores manual order). */
+  sortByRice?: boolean;
 }
 
 interface FeatureBoardProps {
@@ -117,6 +119,12 @@ export function FeatureBoard({
     for (const f of [...items].sort((a, b) => a.position - b.position)) {
       const key = f[groupField];
       (map[key] ??= []).push(f);
+    }
+    // Columns flagged sortByRice show highest-RICE first, regardless of manual order.
+    for (const col of columns) {
+      if (col.sortByRice) {
+        map[col.key]?.sort((a, b) => b.rice_score - a.rice_score);
+      }
     }
     return map;
   }, [items, columns, groupField]);

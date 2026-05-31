@@ -13,7 +13,7 @@ import { useFeatures, useReorderFeatures } from "@/hooks/queries";
 import type { Feature } from "@/types";
 
 const COLUMNS = [
-  { key: "backlog", label: "Backlog" },
+  { key: "backlog", label: "Backlog", sortByRice: true },
   { key: "in_progress", label: "In progress" },
   { key: "done", label: "Done" },
 ];
