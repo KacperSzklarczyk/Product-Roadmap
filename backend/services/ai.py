@@ -10,7 +10,14 @@ from datetime import date
 from anthropic import AsyncAnthropic
 
 from config import settings
-from models import AuditLog, Feature, FeatureStatus, Milestone, RoadmapBucket
+from models import (
+    AuditLog,
+    Feature,
+    FeatureStatus,
+    Milestone,
+    MilestoneStatus,
+    RoadmapBucket,
+)
 from schemas import FeatureDraft, Finding
 
 ALLOWED_IMPACT = [0.25, 0.5, 1.0, 2.0, 3.0]
@@ -315,3 +322,103 @@ async def ask_roadmap(
     )
     parts = [b.text for b in response.content if b.type == "text"]
     return "\n".join(parts).strip() or "I couldn't generate an answer from the current roadmap data."
+
+
+FIX_SYSTEM = """You resolve a SINGLE product-roadmap finding by proposing concrete edits to
+features and milestones. You are given the finding and the full current roadmap. Decide the
+minimal set of changes that genuinely resolves the finding, then call apply_fix exactly once.
+
+You may change these feature fields: roadmap_bucket (now/next/later), status
+(backlog/in_progress/done), reach (int), impact (one of 0.25, 0.5, 1, 2, 3), confidence (0-100),
+effort (>0 person-months). And these milestone fields: due_date (YYYY-MM-DD), status
+(planned/in_progress/completed).
+
+Resolution guidance by finding type:
+- Overloaded "now" bucket: move the lowest-RICE and/or lowest-confidence "now" features to "next"
+  (or "later") until the remaining now effort is realistic for one short sprint window. Prefer
+  moving backlog items before in_progress ones.
+- A "done" feature still sitting in the "now" bucket: move it to "next" so the active board
+  reflects reality.
+- Risky bet (high RICE but low confidence): move it to a later bucket to de-risk the near-term
+  plan. Do not fabricate higher confidence.
+- Milestone not feasible by its due date: either push the milestone due_date out to a realistic
+  date given the summed effort, OR move non-essential features out of the bucket feeding it.
+  Choose the least disruptive option.
+- Status/priority mismatch (high-RICE item stuck in backlog while in "now"): set status to
+  in_progress, or move the bucket, whichever the finding implies.
+- Thin scope / missing description: NOT fixable by these field edits — return empty updates.
+
+Only set fields you are actually changing (omit unchanged ones). Make the smallest change that
+resolves the finding. Only use feature_ids and milestone_ids that appear in the roadmap. Provide a
+concise, human-readable summary of what you did."""
+
+_FEATURE_UPDATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "feature_id": {"type": "integer"},
+        "roadmap_bucket": {"type": "string", "enum": [b.value for b in RoadmapBucket]},
+        "status": {"type": "string", "enum": [s.value for s in FeatureStatus]},
+        "reach": {"type": "integer"},
+        "impact": {"type": "number", "enum": ALLOWED_IMPACT},
+        "confidence": {"type": "integer"},
+        "effort": {"type": "number"},
+    },
+    "required": ["feature_id"],
+}
+_MILESTONE_UPDATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "milestone_id": {"type": "integer"},
+        "due_date": {"type": "string"},
+        "status": {"type": "string", "enum": [s.value for s in MilestoneStatus]},
+    },
+    "required": ["milestone_id"],
+}
+
+APPLY_FIX_TOOL = {
+    "name": "apply_fix",
+    "description": "Apply the concrete feature/milestone edits that resolve the finding.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "feature_updates": {"type": "array", "items": _FEATURE_UPDATE_SCHEMA},
+            "milestone_updates": {"type": "array", "items": _MILESTONE_UPDATE_SCHEMA},
+        },
+        "required": ["summary", "feature_updates", "milestone_updates"],
+    },
+}
+
+
+async def fix_finding(
+    finding: Finding,
+    features: list[Feature],
+    milestones: list[Milestone],
+) -> dict:
+    """Ask the model for a structured plan of edits that resolve the finding.
+
+    Returns the raw tool input ({summary, feature_updates, milestone_updates}); the
+    caller validates and applies it to the database.
+    """
+    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    context = _roadmap_context(features, milestones, [])
+    user = (
+        "FINDING TO RESOLVE:\n"
+        f"severity: {finding.severity}\n"
+        f"title: {finding.title}\n"
+        f"rationale: {finding.rationale}\n"
+        f"related feature_ids: {finding.feature_ids}\n\n"
+        f"CURRENT ROADMAP:\n{context}"
+    )
+    response = await client.messages.create(
+        model=settings.AI_MODEL,
+        max_tokens=1500,
+        system=[{"type": "text", "text": FIX_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        tools=[APPLY_FIX_TOOL],
+        tool_choice={"type": "tool", "name": "apply_fix"},
+        messages=[{"role": "user", "content": user}],
+    )
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "apply_fix":
+            return block.input
+    return {"summary": "No changes proposed.", "feature_updates": [], "milestone_updates": []}

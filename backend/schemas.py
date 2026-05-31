@@ -185,6 +185,13 @@ class AskResponse(BaseModel):
     answer: str
 
 
+class AiFixResponse(BaseModel):
+    summary: str
+    changes: list[str]
+    updated_feature_ids: list[int] = []
+    updated_milestone_ids: list[int] = []
+
+
 # ---------------------------------------------------------------------------
 # Milestones
 # ---------------------------------------------------------------------------

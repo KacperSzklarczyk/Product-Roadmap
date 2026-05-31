@@ -131,6 +131,13 @@ export interface Finding {
   feature_ids: number[];
 }
 
+export interface AiFixResult {
+  summary: string;
+  changes: string[];
+  updated_feature_ids: number[];
+  updated_milestone_ids: number[];
+}
+
 export interface FeatureDraft {
   title: string;
   description: string | null;

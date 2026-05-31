@@ -16,6 +16,7 @@ import type {
   EntityType,
   FeatureInput,
   FeatureReorderItem,
+  Finding,
   MemberRole,
   MilestoneInput,
   ProjectInput,
@@ -180,6 +181,21 @@ export function useAskRoadmap(projectId: number) {
   const onError = useToastError();
   return useMutation({
     mutationFn: (question: string) => aiApi.askRoadmap(projectId, question),
+    onError,
+  });
+}
+
+export function useFixFinding(projectId: number) {
+  const qc = useQueryClient();
+  const onError = useToastError();
+  return useMutation({
+    mutationFn: (finding: Finding) => aiApi.fixFinding(projectId, finding),
+    onSuccess: () => {
+      // The AI may have moved features between buckets / changed milestones —
+      // refresh so the Gantt and lists reflect the applied edits.
+      qc.invalidateQueries({ queryKey: qk.features(projectId) });
+      qc.invalidateQueries({ queryKey: qk.milestones(projectId) });
+    },
     onError,
   });
 }

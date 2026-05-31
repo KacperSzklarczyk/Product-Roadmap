@@ -1,5 +1,12 @@
-import { useEffect } from "react";
-import { Loader2, ScanSearch, RefreshCw, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Loader2,
+  ScanSearch,
+  RefreshCw,
+  CheckCircle2,
+  Wand2,
+} from "lucide-react";
+import toast from "react-hot-toast";
 
 import {
   Sheet,
@@ -10,8 +17,8 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useReviewRoadmap } from "@/hooks/queries";
-import type { Feature, FindingSeverity } from "@/types";
+import { useFixFinding, useReviewRoadmap } from "@/hooks/queries";
+import type { Feature, Finding, FindingSeverity } from "@/types";
 
 const SEVERITY_VARIANT: Record<FindingSeverity, "red" | "yellow" | "secondary"> = {
   high: "red",
@@ -33,13 +40,40 @@ export function ReviewPanel({
   onFeatureClick: (feature: Feature) => void;
 }) {
   const review = useReviewRoadmap(projectId);
-  const { mutate, reset } = review;
+  const fix = useFixFinding(projectId);
+  const { mutate } = review;
 
-  // Run the audit each time the panel opens; reset when it closes.
+  // Persist results: only run automatically the first time the panel opens with
+  // no findings yet. Re-opening keeps the previous results; "Re-run" regenerates.
   useEffect(() => {
-    if (open) mutate();
-    else reset();
-  }, [open, mutate, reset]);
+    if (open && !review.data && !review.isPending) mutate();
+  }, [open, review.data, review.isPending, mutate]);
+
+  // index -> list of applied change strings (a finding that's been fixed)
+  const [fixed, setFixed] = useState<Record<number, string[]>>({});
+  const [fixingIdx, setFixingIdx] = useState<number | null>(null);
+
+  function regenerate() {
+    setFixed({});
+    setFixingIdx(null);
+    mutate();
+  }
+
+  function handleFix(finding: Finding, index: number) {
+    setFixingIdx(index);
+    fix.mutate(finding, {
+      onSuccess: (res) => {
+        setFixingIdx(null);
+        if (res.changes.length > 0) {
+          setFixed((prev) => ({ ...prev, [index]: res.changes }));
+          toast.success(res.summary || "Applied fix");
+        } else {
+          toast(res.summary || "Nothing to auto-fix for this finding.");
+        }
+      },
+      onError: () => setFixingIdx(null),
+    });
+  }
 
   const findings = review.data ?? [];
 
@@ -75,37 +109,72 @@ export function ReviewPanel({
               <p className="text-xs text-muted-foreground">
                 {findings.length} finding{findings.length > 1 ? "s" : ""}, highest severity first.
               </p>
-              {findings.map((f, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl border border-border bg-card p-3 shadow-sm"
-                  data-testid="review-finding"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium leading-snug">{f.title}</p>
-                    <Badge variant={SEVERITY_VARIANT[f.severity]} className="capitalize">
-                      {f.severity}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{f.rationale}</p>
-                  {f.feature_ids.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {f.feature_ids
-                        .map((id) => features.find((feat) => feat.id === id))
-                        .filter((feat): feat is Feature => Boolean(feat))
-                        .map((feat) => (
-                          <button
-                            key={feat.id}
-                            onClick={() => onFeatureClick(feat)}
-                            className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-secondary-foreground hover:bg-accent hover:text-accent-foreground"
-                          >
-                            {feat.title}
-                          </button>
-                        ))}
+              {findings.map((f, i) => {
+                const isFixed = i in fixed;
+                return (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-border bg-card p-3 shadow-sm"
+                    data-testid="review-finding"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium leading-snug">{f.title}</p>
+                      <Badge
+                        variant={isFixed ? "green" : SEVERITY_VARIANT[f.severity]}
+                        className="shrink-0 capitalize"
+                      >
+                        {isFixed ? "fixed" : f.severity}
+                      </Badge>
                     </div>
-                  )}
-                </div>
-              ))}
+                    <p className="mt-1 text-xs text-muted-foreground">{f.rationale}</p>
+
+                    {f.feature_ids.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {f.feature_ids
+                          .map((id) => features.find((feat) => feat.id === id))
+                          .filter((feat): feat is Feature => Boolean(feat))
+                          .map((feat) => (
+                            <button
+                              key={feat.id}
+                              onClick={() => onFeatureClick(feat)}
+                              className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-secondary-foreground hover:bg-accent hover:text-accent-foreground"
+                            >
+                              {feat.title}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+
+                    {isFixed ? (
+                      <div className="mt-3 rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700">
+                        <p className="font-medium">Applied:</p>
+                        <ul className="mt-0.5 list-inside list-disc">
+                          {fixed[i].map((c, k) => (
+                            <li key={k}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleFix(f, i)}
+                          disabled={fixingIdx !== null}
+                          data-testid="fix-btn"
+                        >
+                          {fixingIdx === i ? (
+                            <Loader2 className="animate-spin" />
+                          ) : (
+                            <Wand2 />
+                          )}
+                          {fixingIdx === i ? "Fixing…" : "Fix with AI"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -114,8 +183,8 @@ export function ReviewPanel({
           <Button
             variant="outline"
             className="w-full"
-            onClick={() => mutate()}
-            disabled={review.isPending}
+            onClick={regenerate}
+            disabled={review.isPending || fixingIdx !== null}
           >
             <RefreshCw className={review.isPending ? "animate-spin" : ""} />
             Re-run review

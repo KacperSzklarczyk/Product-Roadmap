@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { Finding } from "@/types";
+import type { AiFixResult, Finding } from "@/types";
 
 export async function reviewRoadmap(projectId: number): Promise<Finding[]> {
   const { data } = await apiClient.post<{ findings: Finding[] }>(
@@ -14,4 +14,15 @@ export async function askRoadmap(projectId: number, question: string): Promise<s
     { question },
   );
   return data.answer;
+}
+
+export async function fixFinding(
+  projectId: number,
+  finding: Finding,
+): Promise<AiFixResult> {
+  const { data } = await apiClient.post<AiFixResult>(
+    `/projects/${projectId}/ai/fix`,
+    finding,
+  );
+  return data;
 }
