@@ -26,6 +26,12 @@ export interface TokenResponse {
 // ---------------------------------------------------------------------------
 export type FeatureStatus = "backlog" | "in_progress" | "done";
 export type RoadmapBucket = "now" | "next" | "later";
+export type FeatureSpecialization =
+  | "frontend"
+  | "backend"
+  | "devops"
+  | "integration"
+  | "testing";
 export type MilestoneStatus = "planned" | "in_progress" | "completed";
 export type MemberRole = "owner" | "editor" | "viewer";
 export type EntityType = "project" | "feature" | "milestone" | "member" | "comment";
@@ -49,6 +55,7 @@ export interface Feature {
   description: string | null;
   status: FeatureStatus;
   roadmap_bucket: RoadmapBucket;
+  specialization: FeatureSpecialization | null;
   reach: number;
   impact: number;
   confidence: number;
@@ -101,6 +108,7 @@ export interface FeatureInput {
   description?: string | null;
   status?: FeatureStatus;
   roadmap_bucket?: RoadmapBucket;
+  specialization?: FeatureSpecialization | null;
   reach?: number;
   impact?: number;
   confidence?: number;
@@ -137,11 +145,57 @@ export interface AskResult {
   other_topics: string[];
 }
 
-export interface AiFixResult {
+// Staged AI fix: a discrete proposed change the user can accept/reject.
+export interface FixChange {
+  id: string;
+  target: "feature" | "milestone";
+  entity_id: number;
+  entity_title: string;
+  field: string;
+  label: string;
+  current: string;
+  proposed: string;
+}
+
+export interface AiFixPreview {
   summary: string;
-  changes: string[];
+  changes: FixChange[];
+}
+
+export interface FixApplyItem {
+  target: "feature" | "milestone";
+  entity_id: number;
+  field: string;
+  value: string;
+}
+
+export interface AiFixApplyResult {
+  applied: string[];
   updated_feature_ids: number[];
   updated_milestone_ids: number[];
+}
+
+export interface TeamComposition {
+  project_id: number;
+  frontend_devs: number;
+  backend_devs: number;
+  fullstack_devs: number;
+  testers: number;
+  devops: number;
+  integration_engineers: number;
+  sprint_length_weeks: number;
+  sprint_start_date: string | null;
+}
+
+export interface TeamCompositionInput {
+  frontend_devs: number;
+  backend_devs: number;
+  fullstack_devs: number;
+  testers: number;
+  devops: number;
+  integration_engineers: number;
+  sprint_length_weeks: number;
+  sprint_start_date: string | null;
 }
 
 export interface FeatureDraft {

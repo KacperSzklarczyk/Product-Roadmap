@@ -8,13 +8,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { FeatureStatus, RoadmapBucket } from "@/types";
+import type {
+  FeatureSpecialization,
+  FeatureStatus,
+  RoadmapBucket,
+} from "@/types";
 
 export interface FeatureFormValue {
   title: string;
   description: string;
   status: FeatureStatus;
   roadmap_bucket: RoadmapBucket;
+  specialization: FeatureSpecialization | "none";
   reach: number;
   impact: number;
   confidence: number;
@@ -26,11 +31,20 @@ export const EMPTY_FEATURE: FeatureFormValue = {
   description: "",
   status: "backlog",
   roadmap_bucket: "later",
+  specialization: "none",
   reach: 100,
   impact: 1,
   confidence: 50,
   effort: 1,
 };
+
+const SPECIALIZATION_OPTIONS: { value: FeatureSpecialization; label: string }[] = [
+  { value: "frontend", label: "Frontend" },
+  { value: "backend", label: "Backend" },
+  { value: "devops", label: "DevOps" },
+  { value: "integration", label: "Integration" },
+  { value: "testing", label: "Testing" },
+];
 
 const IMPACT_OPTIONS = [
   { value: 0.25, label: "0.25 — Minimal" },
@@ -109,6 +123,28 @@ export function FeatureFields({
             </SelectContent>
           </Select>
         </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label>Specialization</Label>
+        <Select
+          value={value.specialization}
+          onValueChange={(v) => set("specialization", v as FeatureSpecialization | "none")}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">— Unspecified —</SelectItem>
+            {SPECIALIZATION_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Attributes this feature's effort to a discipline so the AI can plan sprint capacity.
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-2">

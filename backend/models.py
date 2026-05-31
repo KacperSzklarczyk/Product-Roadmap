@@ -19,6 +19,16 @@ class RoadmapBucket(str, Enum):
     LATER = "later"
 
 
+class FeatureSpecialization(str, Enum):
+    """Discipline a feature's effort (person-months) is attributed to."""
+
+    FRONTEND = "frontend"
+    BACKEND = "backend"
+    DEVOPS = "devops"
+    INTEGRATION = "integration"
+    TESTING = "testing"
+
+
 class MilestoneStatus(str, Enum):
     PLANNED = "planned"
     IN_PROGRESS = "in_progress"
@@ -103,6 +113,8 @@ class Feature(TimestampMixin):
     description = fields.TextField(null=True)
     status = fields.CharEnumField(FeatureStatus, default=FeatureStatus.BACKLOG)
     roadmap_bucket = fields.CharEnumField(RoadmapBucket, default=RoadmapBucket.LATER)
+    # Discipline this feature's effort belongs to (optional — null = unspecified).
+    specialization = fields.CharEnumField(FeatureSpecialization, null=True, default=None)
 
     # Classic RICE inputs.
     reach = fields.IntField(default=0)
@@ -141,6 +153,28 @@ class Milestone(TimestampMixin):
 
     def __str__(self) -> str:
         return self.title
+
+
+class TeamComposition(TimestampMixin):
+    """Per-project team head-counts + sprint cadence used for capacity reasoning."""
+
+    id = fields.IntField(pk=True)
+    project: fields.OneToOneRelation[Project] = fields.OneToOneField(
+        "models.Project", related_name="team", on_delete=fields.CASCADE
+    )
+    frontend_devs = fields.IntField(default=0)
+    backend_devs = fields.IntField(default=0)
+    fullstack_devs = fields.IntField(default=0)
+    testers = fields.IntField(default=0)
+    devops = fields.IntField(default=0)
+    integration_engineers = fields.IntField(default=0)
+
+    # Sprint cadence — the next 3 sprints are auto-chained from these.
+    sprint_length_weeks = fields.IntField(default=2)
+    sprint_start_date = fields.DateField(null=True)
+
+    class Meta:
+        table = "team_compositions"
 
 
 class Member(TimestampMixin):

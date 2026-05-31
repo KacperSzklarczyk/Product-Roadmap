@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { Send, Sparkles } from "lucide-react";
 
 import {
   Sheet,
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AiProgress, ASK_STEPS } from "@/components/roadmap/AiProgress";
 import { useAskRoadmap } from "@/hooks/queries";
 
 const EXAMPLES = [
@@ -144,9 +145,8 @@ export function AskPanel({
           })}
 
           {ask.isPending && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Thinking…
+            <div className="rounded-2xl rounded-bl-sm bg-secondary px-3 py-2.5">
+              <AiProgress steps={ASK_STEPS} intervalMs={900} />
             </div>
           )}
         </div>

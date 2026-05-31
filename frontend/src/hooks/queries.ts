@@ -12,14 +12,17 @@ import * as featuresApi from "@/api/features";
 import * as membersApi from "@/api/members";
 import * as milestonesApi from "@/api/milestones";
 import * as projectsApi from "@/api/projects";
+import * as teamApi from "@/api/team";
 import type {
   EntityType,
   FeatureInput,
   FeatureReorderItem,
   Finding,
+  FixApplyItem,
   MemberRole,
   MilestoneInput,
   ProjectInput,
+  TeamCompositionInput,
 } from "@/types";
 
 // Query keys --------------------------------------------------------------
@@ -29,6 +32,7 @@ export const qk = {
   features: (pid: number) => ["projects", pid, "features"] as const,
   milestones: (pid: number) => ["projects", pid, "milestones"] as const,
   members: (pid: number) => ["projects", pid, "members"] as const,
+  team: (pid: number) => ["projects", pid, "team"] as const,
   comments: (pid: number, type: EntityType, id: number) =>
     ["projects", pid, "comments", type, id] as const,
 };
@@ -153,6 +157,9 @@ export function useReorderFeatures(projectId: number) {
       featuresApi.reorderFeatures(projectId, items),
     onSuccess: (features) => {
       qc.setQueryData(qk.features(projectId), features);
+      // Also invalidate so every other view (roadmap Gantt, AI panels) refetches
+      // the authoritative server state — keeps board ↔ roadmap in sync.
+      qc.invalidateQueries({ queryKey: qk.features(projectId) });
     },
     onError: (error) => {
       onError(error);
@@ -185,16 +192,48 @@ export function useAskRoadmap(projectId: number) {
   });
 }
 
-export function useFixFinding(projectId: number) {
+export function useFixPreview(projectId: number) {
+  const onError = useToastError();
+  return useMutation({
+    // Preview only — proposes changes without touching the database.
+    mutationFn: (finding: Finding) => aiApi.previewFix(projectId, finding),
+    onError,
+  });
+}
+
+export function useFixApply(projectId: number) {
   const qc = useQueryClient();
   const onError = useToastError();
   return useMutation({
-    mutationFn: (finding: Finding) => aiApi.fixFinding(projectId, finding),
+    // Applies an accepted subset (or the inverse, for revert). The AI may have
+    // moved features between buckets / changed milestones — refresh so the board,
+    // Gantt, and AI panels all reflect the applied edits.
+    mutationFn: (changes: FixApplyItem[]) => aiApi.applyFix(projectId, changes),
     onSuccess: () => {
-      // The AI may have moved features between buckets / changed milestones —
-      // refresh so the Gantt and lists reflect the applied edits.
       qc.invalidateQueries({ queryKey: qk.features(projectId) });
       qc.invalidateQueries({ queryKey: qk.milestones(projectId) });
+    },
+    onError,
+  });
+}
+
+// Team composition --------------------------------------------------------
+export function useTeam(projectId: number) {
+  return useQuery({
+    queryKey: qk.team(projectId),
+    queryFn: () => teamApi.getTeam(projectId),
+  });
+}
+
+export function useUpdateTeam(projectId: number) {
+  const qc = useQueryClient();
+  const onError = useToastError();
+  return useMutation({
+    mutationFn: (payload: TeamCompositionInput) =>
+      teamApi.updateTeam(projectId, payload),
+    onSuccess: (team) => {
+      qc.setQueryData(qk.team(projectId), team);
+      toast.success("Team & sprints saved");
     },
     onError,
   });

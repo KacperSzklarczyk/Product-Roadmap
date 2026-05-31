@@ -5,7 +5,8 @@ tool call (structured output). The system prompt is prompt-cached. Nothing is
 persisted here — the caller reviews/edits drafts and creates features normally.
 """
 
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 
 from anthropic import AsyncAnthropic
 
@@ -13,10 +14,12 @@ from config import settings
 from models import (
     AuditLog,
     Feature,
+    FeatureSpecialization,
     FeatureStatus,
     Milestone,
     MilestoneStatus,
     RoadmapBucket,
+    TeamComposition,
 )
 from schemas import FeatureDraft, Finding
 
@@ -177,10 +180,72 @@ async def draft_features_from_text(text: str) -> list[FeatureDraft]:
 # ---------------------------------------------------------------------------
 # Roadmap review + ask (analysis over the project's own data)
 # ---------------------------------------------------------------------------
+_WEEKS_PER_MONTH = 4.33
+
+
+def _team_and_capacity(team: TeamComposition | None, features: list[Feature]) -> list[str]:
+    """Render team head-counts, the next 3 auto-chained sprints, effort-by-specialization,
+    and per-sprint capacity (person-months) so the model can judge what's deliverable."""
+    lines: list[str] = []
+
+    # Effort attributed to each specialization, and per bucket — always useful.
+    by_spec: dict[str, float] = defaultdict(float)
+    for f in features:
+        key = f.specialization.value if f.specialization else "unspecified"
+        by_spec[key] += f.effort
+    lines += ["", "## Effort by specialization (person-months)"]
+    if by_spec:
+        for spec, total in sorted(by_spec.items()):
+            lines.append(f"{spec}: {round(total, 2)}pm")
+    else:
+        lines.append("(no features)")
+
+    if team is None:
+        lines += ["", "## Team & sprints", "(not configured — capacity unknown)"]
+        return lines
+
+    lines += ["", "## Team composition (head-count)"]
+    lines.append(
+        f"frontend={team.frontend_devs} | backend={team.backend_devs} | "
+        f"fullstack={team.fullstack_devs} | testers={team.testers} | "
+        f"devops={team.devops} | integration={team.integration_engineers}"
+    )
+
+    weeks = team.sprint_length_weeks
+    sprint_months = round(weeks / _WEEKS_PER_MONTH, 2)
+    lines += ["", f"## Sprints (length {weeks} weeks ≈ {sprint_months} months each)"]
+    if team.sprint_start_date:
+        start = team.sprint_start_date
+        for n in range(3):
+            s = start + timedelta(weeks=weeks * n)
+            e = start + timedelta(weeks=weeks * (n + 1)) - timedelta(days=1)
+            lines.append(f"Sprint {n + 1}: {s.isoformat()} – {e.isoformat()}")
+    else:
+        lines.append("(sprint start date not set)")
+
+    # Capacity per sprint per specialization = head-count * sprint_months.
+    lines += ["", "## Capacity per sprint (person-months available)"]
+    cap = {
+        "frontend": team.frontend_devs * sprint_months,
+        "backend": team.backend_devs * sprint_months,
+        "testing": team.testers * sprint_months,
+        "devops": team.devops * sprint_months,
+        "integration": team.integration_engineers * sprint_months,
+    }
+    for spec, amount in cap.items():
+        lines.append(f"{spec}: {round(amount, 2)}pm")
+    flex = round(team.fullstack_devs * sprint_months, 2)
+    lines.append(
+        f"fullstack flexible pool: {flex}pm (can cover frontend OR backend on top of the above)"
+    )
+    return lines
+
+
 def _roadmap_context(
     features: list[Feature],
     milestones: list[Milestone],
     activity: list[AuditLog],
+    team: TeamComposition | None = None,
 ) -> str:
     """Render the project's roadmap as compact text for the model to reason over."""
     lines = [f"Today's date: {date.today().isoformat()}.", "", "## Features (sorted by RICE, highest first)"]
@@ -188,9 +253,10 @@ def _roadmap_context(
         lines.append("(none)")
     for f in sorted(features, key=lambda x: x.rice_score, reverse=True):
         desc = f" — {f.description}" if f.description else ""
+        spec = f.specialization.value if f.specialization else "unspecified"
         lines.append(
             f"[{f.id}] {f.title} | bucket={f.roadmap_bucket.value} | status={f.status.value} | "
-            f"reach={f.reach} | impact={f.impact} | confidence={f.confidence}% | "
+            f"spec={spec} | reach={f.reach} | impact={f.impact} | confidence={f.confidence}% | "
             f"effort={f.effort}pm | RICE={f.rice_score}{desc}"
         )
 
@@ -201,6 +267,8 @@ def _roadmap_context(
         lines.append(
             f"{m.title} | due={m.due_date.isoformat() if m.due_date else 'unset'} | status={m.status.value}"
         )
+
+    lines += _team_and_capacity(team, features)
 
     lines += ["", "## Recent activity (newest first)"]
     if not activity:
@@ -216,12 +284,18 @@ def _roadmap_context(
 REVIEW_SYSTEM = """You are a senior product-operations reviewer auditing a product roadmap for a
 team that builds GenAI tools for auditors. Audit the roadmap data the user sends and surface
 concrete FINDINGS, the way an auditor would. Look specifically for:
+- Capacity overload by specialization: compare the "Effort by specialization" totals (and the Now
+  bucket especially) against the per-sprint, per-specialization "Capacity" numbers when a team is
+  configured. Flag when a discipline's required effort exceeds what its head-count can deliver in a
+  sprint (remember fullstack devs add a flexible frontend/backend pool). Be concrete about the gap
+  in person-months.
 - Overloaded "Now" bucket: too much summed effort (person-months) to realistically ship soon.
 - Risky bets: high RICE score but low confidence (< 50%).
-- Milestone feasibility: given today's date and milestone due dates, whether the summed effort of
-  the relevant in-flight work can plausibly fit before the milestone.
+- Milestone feasibility: given today's date, the sprint windows, and milestone due dates, whether
+  the relevant in-flight work can plausibly fit before the milestone at the team's capacity.
 - Status/priority mismatches: high-RICE items stuck in backlog; items marked done still in "now".
 - Thin scope: high-impact features with no description.
+- Unspecified specialization on sizeable features (so capacity can't be planned).
 
 For each finding provide: severity (high | medium | low), a short title, a one-to-two sentence
 rationale that cites specific numbers, RICE scores, person-months, or dates from the data, and the
@@ -260,6 +334,7 @@ async def review_roadmap(
     features: list[Feature],
     milestones: list[Milestone],
     activity: list[AuditLog],
+    team: TeamComposition | None = None,
 ) -> list[Finding]:
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     response = await client.messages.create(
@@ -268,7 +343,7 @@ async def review_roadmap(
         system=[{"type": "text", "text": REVIEW_SYSTEM, "cache_control": {"type": "ephemeral"}}],
         tools=[REVIEW_TOOL],
         tool_choice={"type": "tool", "name": "emit_findings"},
-        messages=[{"role": "user", "content": _roadmap_context(features, milestones, activity)}],
+        messages=[{"role": "user", "content": _roadmap_context(features, milestones, activity, team)}],
     )
     valid_ids = {f.id for f in features}
     findings: list[Finding] = []
@@ -296,8 +371,11 @@ Answer the user's question about THIS roadmap using only the data provided below
 specific: reference features by title; cite RICE scores, effort (person-months), confidence,
 buckets, and milestone due dates; use the recent activity log when asked what changed. When asked
 what to cut or prioritize, reason explicitly with RICE (value) versus effort (cost) and the
-milestone dates. If the data does not contain the answer, say so briefly. Never invent features or
-numbers.
+milestone dates. When asked what's doable in a sprint or whether the team has capacity, use the
+"Team composition", "Sprints", "Effort by specialization", and "Capacity per sprint" sections:
+compare each specialization's required effort against its per-sprint capacity (fullstack devs add a
+flexible frontend/backend pool). If the data does not contain the answer, say so briefly. Never
+invent features or numbers.
 
 You MUST call answer_question exactly once. Build its fields like this:
 
@@ -347,9 +425,10 @@ async def ask_roadmap(
     features: list[Feature],
     milestones: list[Milestone],
     activity: list[AuditLog],
+    team: TeamComposition | None = None,
 ) -> dict:
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    context = _roadmap_context(features, milestones, activity)
+    context = _roadmap_context(features, milestones, activity, team)
     response = await client.messages.create(
         model=settings.AI_MODEL,
         max_tokens=1400,
@@ -381,11 +460,17 @@ features and milestones. You are given the finding and the full current roadmap.
 minimal set of changes that genuinely resolves the finding, then call apply_fix exactly once.
 
 You may change these feature fields: roadmap_bucket (now/next/later), status
-(backlog/in_progress/done), reach (int), impact (one of 0.25, 0.5, 1, 2, 3), confidence (0-100),
-effort (>0 person-months). And these milestone fields: due_date (YYYY-MM-DD), status
-(planned/in_progress/completed).
+(backlog/in_progress/done), specialization (frontend/backend/devops/integration/testing), reach
+(int), impact (one of 0.25, 0.5, 1, 2, 3), confidence (0-100), effort (>0 person-months). And these
+milestone fields: due_date (YYYY-MM-DD), status (planned/in_progress/completed).
+
+When a team and sprint capacity are provided in the roadmap data, respect them: move just enough
+effort out of the overloaded bucket/specialization so each discipline's remaining effort fits within
+its per-sprint capacity (fullstack devs add a flexible frontend/backend pool). Don't over-correct.
 
 Resolution guidance by finding type:
+- Capacity overload in a specialization: move the lowest-RICE features of that specialization out of
+  "now" until the remaining effort for that discipline fits its per-sprint capacity.
 - Overloaded "now" bucket: move the lowest-RICE and/or lowest-confidence "now" features to "next"
   (or "later") until the remaining now effort is realistic for one short sprint window. Prefer
   moving backlog items before in_progress ones.
@@ -410,6 +495,7 @@ _FEATURE_UPDATE_SCHEMA = {
         "feature_id": {"type": "integer"},
         "roadmap_bucket": {"type": "string", "enum": [b.value for b in RoadmapBucket]},
         "status": {"type": "string", "enum": [s.value for s in FeatureStatus]},
+        "specialization": {"type": "string", "enum": [s.value for s in FeatureSpecialization]},
         "reach": {"type": "integer"},
         "impact": {"type": "number", "enum": ALLOWED_IMPACT},
         "confidence": {"type": "integer"},
@@ -446,6 +532,7 @@ async def fix_finding(
     finding: Finding,
     features: list[Feature],
     milestones: list[Milestone],
+    team: TeamComposition | None = None,
 ) -> dict:
     """Ask the model for a structured plan of edits that resolve the finding.
 
@@ -453,7 +540,7 @@ async def fix_finding(
     caller validates and applies it to the database.
     """
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    context = _roadmap_context(features, milestones, [])
+    context = _roadmap_context(features, milestones, [], team)
     user = (
         "FINDING TO RESOLVE:\n"
         f"severity: {finding.severity}\n"

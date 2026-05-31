@@ -40,6 +40,7 @@ export function FeatureFormDialog({
         description: value.description || null,
         status: value.status,
         roadmap_bucket: value.roadmap_bucket,
+        specialization: value.specialization === "none" ? null : value.specialization,
         reach: value.reach,
         impact: value.impact,
         confidence: value.confidence,

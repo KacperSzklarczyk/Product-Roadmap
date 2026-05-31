@@ -2,7 +2,14 @@ import { useMemo, useState } from "react";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { cn } from "@/lib/utils";
-import type { Feature, FeatureStatus, Milestone, RoadmapBucket } from "@/types";
+import { deriveSprints } from "@/lib/sprints";
+import type {
+  Feature,
+  FeatureStatus,
+  Milestone,
+  RoadmapBucket,
+  TeamComposition,
+} from "@/types";
 
 // ---- layout constants (px) ----
 const LEFT_W = 104; // swimlane label column
@@ -72,11 +79,13 @@ interface HoverState {
 export function GanttChart({
   features,
   milestones,
+  team,
   onFeatureClick,
   onMilestoneClick,
 }: {
   features: Feature[];
   milestones: Milestone[];
+  team?: TeamComposition | null;
   onFeatureClick: (f: Feature) => void;
   onMilestoneClick?: (m: Milestone) => void;
 }) {
@@ -84,6 +93,7 @@ export function GanttChart({
 
   const model = useMemo(() => {
     const today = startOfDay(new Date());
+    const sprintWindows = deriveSprints(team);
 
     // Group + sort features per bucket (highest RICE first).
     const byBucket = (key: RoadmapBucket) =>
@@ -112,9 +122,14 @@ export function GanttChart({
     const ends = [
       ...scheduled.map((s) => s.end),
       ...milestones.map((m) => (m.due_date ? parseISO(m.due_date) : today)),
+      ...sprintWindows.map((s) => s.end),
       addMonths(today, 1),
     ];
-    const starts = [today, ...milestones.map((m) => (m.due_date ? parseISO(m.due_date) : today))];
+    const starts = [
+      today,
+      ...milestones.map((m) => (m.due_date ? parseISO(m.due_date) : today)),
+      ...sprintWindows.map((s) => s.start),
+    ];
     const timelineStart = startOfMonth(new Date(Math.min(...starts.map((d) => d.getTime()))));
     const timelineEnd = endOfMonth(new Date(Math.max(...ends.map((d) => d.getTime()))));
     const totalDays = Math.max(1, daysBetween(timelineStart, timelineEnd));
@@ -164,8 +179,19 @@ export function GanttChart({
       .filter((m) => m.due_date)
       .map((m) => ({ milestone: m, left: xOf(parseISO(m.due_date as string)) }));
 
-    return { timelineWidth, months, bands, totalRows, bars, markers };
-  }, [features, milestones]);
+    // Sprint bands (clipped to the visible timeline).
+    const sprints = sprintWindows
+      .map((s) => {
+        const rawLeft = xOf(s.start);
+        const rawRight = xOf(addDays(s.end, 1));
+        const left = Math.max(0, rawLeft);
+        const right = Math.min(timelineWidth, rawRight);
+        return { number: s.number, left, width: right - left };
+      })
+      .filter((s) => s.width > 0);
+
+    return { timelineWidth, months, bands, totalRows, bars, markers, sprints };
+  }, [features, milestones, team]);
 
   const bodyHeight = model.totalRows * ROW_H;
   const innerWidth = LEFT_W + model.timelineWidth;
@@ -236,6 +262,22 @@ export function GanttChart({
                   )}
                   style={{ top: b.startRow * ROW_H, height: b.rows * ROW_H }}
                 />
+              ))}
+
+              {/* sprint bands (behind bars) */}
+              {model.sprints.map((s, i) => (
+                <div
+                  key={`sprint-${s.number}`}
+                  className={cn(
+                    "pointer-events-none absolute top-0 border-l-2 border-indigo-400/40",
+                    i % 2 === 0 ? "bg-indigo-500/[0.06]" : "bg-indigo-500/[0.02]",
+                  )}
+                  style={{ left: s.left, width: s.width, height: bodyHeight }}
+                >
+                  <span className="absolute left-1 top-1 rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                    Sprint {s.number}
+                  </span>
+                </div>
               ))}
 
               {/* month gridlines */}

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from models import (
     AuditAction,
     EntityType,
+    FeatureSpecialization,
     FeatureStatus,
     MemberRole,
     MilestoneStatus,
@@ -90,6 +91,7 @@ class FeatureCreate(_FeatureRICEMixin):
     description: str | None = None
     status: FeatureStatus = FeatureStatus.BACKLOG
     roadmap_bucket: RoadmapBucket = RoadmapBucket.LATER
+    specialization: FeatureSpecialization | None = None
     reach: int = Field(default=0, ge=0)
     impact: float = 1.0
     confidence: int = Field(default=100, ge=0, le=100)
@@ -102,6 +104,7 @@ class FeatureUpdate(_FeatureRICEMixin):
     description: str | None = None
     status: FeatureStatus | None = None
     roadmap_bucket: RoadmapBucket | None = None
+    specialization: FeatureSpecialization | None = None
     reach: int | None = Field(default=None, ge=0)
     impact: float | None = None
     confidence: int | None = Field(default=None, ge=0, le=100)
@@ -118,6 +121,7 @@ class FeatureOut(BaseModel):
     description: str | None
     status: FeatureStatus
     roadmap_bucket: RoadmapBucket
+    specialization: FeatureSpecialization | None
     reach: int
     impact: float
     confidence: int
@@ -187,11 +191,66 @@ class AskResponse(BaseModel):
     other_topics: list[str] = []
 
 
-class AiFixResponse(BaseModel):
+# Staged AI fix: preview discrete changes, then apply an accepted subset.
+class FixChange(BaseModel):
+    id: str  # stable client key, e.g. "feature:12:roadmap_bucket"
+    target: str  # "feature" | "milestone"
+    entity_id: int
+    entity_title: str
+    field: str
+    label: str  # human-readable, e.g. "Move from now to next"
+    current: str
+    proposed: str
+
+
+class AiFixPreview(BaseModel):
     summary: str
-    changes: list[str]
+    changes: list[FixChange] = []
+
+
+class FixApplyItem(BaseModel):
+    target: str  # "feature" | "milestone"
+    entity_id: int
+    field: str
+    value: str
+
+
+class FixApplyRequest(BaseModel):
+    changes: list[FixApplyItem] = Field(min_length=1)
+
+
+class AiFixApplyResult(BaseModel):
+    applied: list[str] = []
     updated_feature_ids: list[int] = []
     updated_milestone_ids: list[int] = []
+
+
+# ---------------------------------------------------------------------------
+# Team composition + sprint cadence
+# ---------------------------------------------------------------------------
+class TeamCompositionIn(BaseModel):
+    frontend_devs: int = Field(default=0, ge=0)
+    backend_devs: int = Field(default=0, ge=0)
+    fullstack_devs: int = Field(default=0, ge=0)
+    testers: int = Field(default=0, ge=0)
+    devops: int = Field(default=0, ge=0)
+    integration_engineers: int = Field(default=0, ge=0)
+    sprint_length_weeks: int = Field(default=2, ge=1, le=12)
+    sprint_start_date: date | None = None
+
+
+class TeamCompositionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: int
+    frontend_devs: int
+    backend_devs: int
+    fullstack_devs: int
+    testers: int
+    devops: int
+    integration_engineers: int
+    sprint_length_weeks: int
+    sprint_start_date: date | None
 
 
 # ---------------------------------------------------------------------------

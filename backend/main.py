@@ -15,6 +15,7 @@ from routers import (
     members,
     milestones,
     projects,
+    team,
 )
 
 
@@ -45,6 +46,7 @@ app.include_router(members.router)
 app.include_router(comments.router)
 app.include_router(audit.router)
 app.include_router(export.router)
+app.include_router(team.router)
 app.include_router(ai.router)
 
 

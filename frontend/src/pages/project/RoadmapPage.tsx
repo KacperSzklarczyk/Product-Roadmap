@@ -13,7 +13,7 @@ import { FeatureModal } from "@/components/features/FeatureModal";
 import { MilestoneFormDialog } from "@/components/features/MilestoneFormDialog";
 import { downloadFeaturesCsv } from "@/api/export";
 import { getErrorMessage } from "@/api/client";
-import { useFeatures, useMilestones } from "@/hooks/queries";
+import { useFeatures, useMilestones, useTeam } from "@/hooks/queries";
 import type { Feature, Milestone } from "@/types";
 
 const LEGEND = [
@@ -29,6 +29,7 @@ export function RoadmapPage() {
   const id = Number(projectId);
   const { data: features, isLoading: featuresLoading } = useFeatures(id);
   const { data: milestones, isLoading: milestonesLoading } = useMilestones(id);
+  const { data: team } = useTeam(id);
 
   const [selected, setSelected] = useState<Feature | null>(null);
   const [msDialog, setMsDialog] = useState<MilestoneDialog>(null);
@@ -94,6 +95,7 @@ export function RoadmapPage() {
         <GanttChart
           features={features ?? []}
           milestones={milestones ?? []}
+          team={team}
           onFeatureClick={setSelected}
           onMilestoneClick={(m) => setMsDialog({ key: `edit-${m.id}`, target: m })}
         />

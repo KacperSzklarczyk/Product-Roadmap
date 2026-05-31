@@ -8,6 +8,7 @@ import { FeatureBoard } from "@/components/features/FeatureBoard";
 import { FeatureFormDialog } from "@/components/features/FeatureFormDialog";
 import { FeatureModal } from "@/components/features/FeatureModal";
 import { AiDraftDialog } from "@/components/features/AiDraftDialog";
+import { TeamSprintPanel } from "@/components/planning/TeamSprintPanel";
 import { useFeatures, useReorderFeatures } from "@/hooks/queries";
 import type { Feature } from "@/types";
 
@@ -29,6 +30,8 @@ export function BoardPage() {
 
   return (
     <div>
+      <TeamSprintPanel projectId={id} />
+
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-xl font-semibold">Kanban board</h2>
         <div className="flex gap-2">

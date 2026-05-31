@@ -22,6 +22,11 @@ export function FeatureCard({ feature, onClick, dragHandleProps }: FeatureCardPr
           {feature.description}
         </p>
       )}
+      {feature.specialization && (
+        <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
+          {feature.specialization}
+        </span>
+      )}
       <div className="flex items-center justify-between pt-1">
         <ConfidenceBadge confidence={feature.confidence} />
         <span

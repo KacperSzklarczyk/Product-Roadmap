@@ -1,5 +1,11 @@
 import { apiClient } from "@/api/client";
-import type { AiFixResult, AskResult, Finding } from "@/types";
+import type {
+  AiFixApplyResult,
+  AiFixPreview,
+  AskResult,
+  Finding,
+  FixApplyItem,
+} from "@/types";
 
 export async function reviewRoadmap(projectId: number): Promise<Finding[]> {
   const { data } = await apiClient.post<{ findings: Finding[] }>(
@@ -16,13 +22,24 @@ export async function askRoadmap(projectId: number, question: string): Promise<A
   return data;
 }
 
-export async function fixFinding(
+export async function previewFix(
   projectId: number,
   finding: Finding,
-): Promise<AiFixResult> {
-  const { data } = await apiClient.post<AiFixResult>(
+): Promise<AiFixPreview> {
+  const { data } = await apiClient.post<AiFixPreview>(
     `/projects/${projectId}/ai/fix`,
     finding,
+  );
+  return data;
+}
+
+export async function applyFix(
+  projectId: number,
+  changes: FixApplyItem[],
+): Promise<AiFixApplyResult> {
+  const { data } = await apiClient.post<AiFixApplyResult>(
+    `/projects/${projectId}/ai/fix/apply`,
+    { changes },
   );
   return data;
 }
