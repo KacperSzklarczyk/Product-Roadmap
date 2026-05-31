@@ -53,6 +53,7 @@ export function AiDraftDialog({
         description: d.description,
         status: d.status,
         roadmap_bucket: d.roadmap_bucket,
+        specialization: d.specialization,
         reach: d.reach,
         impact: d.impact,
         confidence: d.confidence,
@@ -126,6 +127,11 @@ export function AiDraftDialog({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <ConfidenceBadge confidence={d.confidence} />
+                    {d.specialization && (
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
+                        {d.specialization}
+                      </span>
+                    )}
                     <span>R{d.reach} · I{d.impact} · E{d.effort}</span>
                   </div>
                   <Button

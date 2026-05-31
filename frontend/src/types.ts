@@ -203,8 +203,14 @@ export interface FeatureDraft {
   description: string | null;
   status: FeatureStatus;
   roadmap_bucket: RoadmapBucket;
+  specialization: FeatureSpecialization | null;
   reach: number;
   impact: number;
   confidence: number;
   effort: number;
+}
+
+export interface ClassifyResult {
+  classified: number;
+  updated_feature_ids: number[];
 }

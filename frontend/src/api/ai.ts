@@ -3,6 +3,7 @@ import type {
   AiFixApplyResult,
   AiFixPreview,
   AskResult,
+  ClassifyResult,
   Finding,
   FixApplyItem,
 } from "@/types";
@@ -40,6 +41,15 @@ export async function applyFix(
   const { data } = await apiClient.post<AiFixApplyResult>(
     `/projects/${projectId}/ai/fix/apply`,
     { changes },
+  );
+  return data;
+}
+
+export async function classifySpecializations(
+  projectId: number,
+): Promise<ClassifyResult> {
+  const { data } = await apiClient.post<ClassifyResult>(
+    `/projects/${projectId}/ai/classify-specializations`,
   );
   return data;
 }

@@ -157,6 +157,7 @@ class FeatureDraft(_FeatureRICEMixin):
     description: str | None = None
     status: FeatureStatus = FeatureStatus.BACKLOG
     roadmap_bucket: RoadmapBucket = RoadmapBucket.LATER
+    specialization: FeatureSpecialization | None = None
     reach: int = Field(default=0, ge=0)
     impact: float = 1.0
     confidence: int = Field(default=50, ge=0, le=100)
@@ -223,6 +224,11 @@ class AiFixApplyResult(BaseModel):
     applied: list[str] = []
     updated_feature_ids: list[int] = []
     updated_milestone_ids: list[int] = []
+
+
+class ClassifyResult(BaseModel):
+    classified: int
+    updated_feature_ids: list[int] = []
 
 
 # ---------------------------------------------------------------------------

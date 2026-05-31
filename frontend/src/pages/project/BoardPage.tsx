@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Plus, Sparkles } from "lucide-react";
+import { Loader2, Plus, Sparkles, Tags } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +9,11 @@ import { FeatureFormDialog } from "@/components/features/FeatureFormDialog";
 import { FeatureModal } from "@/components/features/FeatureModal";
 import { AiDraftDialog } from "@/components/features/AiDraftDialog";
 import { TeamSprintPanel } from "@/components/planning/TeamSprintPanel";
-import { useFeatures, useReorderFeatures } from "@/hooks/queries";
+import {
+  useClassifySpecializations,
+  useFeatures,
+  useReorderFeatures,
+} from "@/hooks/queries";
 import type { Feature } from "@/types";
 
 const COLUMNS = [
@@ -23,6 +27,8 @@ export function BoardPage() {
   const id = Number(projectId);
   const { data: features, isLoading } = useFeatures(id);
   const reorder = useReorderFeatures(id);
+  const classify = useClassifySpecializations(id);
+  const hasUnspecified = (features ?? []).some((f) => !f.specialization);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -35,6 +41,17 @@ export function BoardPage() {
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-xl font-semibold">Kanban board</h2>
         <div className="flex gap-2">
+          {hasUnspecified && (
+            <Button
+              variant="outline"
+              onClick={() => classify.mutate()}
+              disabled={classify.isPending}
+              data-testid="classify-btn"
+            >
+              {classify.isPending ? <Loader2 className="animate-spin" /> : <Tags />}
+              {classify.isPending ? "Assigning…" : "Auto-assign specializations"}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setAiOpen(true)} data-testid="ai-button">
             <Sparkles />
             AI draft

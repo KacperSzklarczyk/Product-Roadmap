@@ -25,6 +25,7 @@ from schemas import (
     AiReviewResponse,
     AskRequest,
     AskResponse,
+    ClassifyResult,
     Finding,
     FixApplyRequest,
     FixChange,
@@ -76,6 +77,36 @@ async def ask_roadmap(
     features, milestones, activity, team = await _load(project_id)
     result = await ai.ask_roadmap(payload.question, features, milestones, activity, team)
     return AskResponse(**result)
+
+
+@router.post("/classify-specializations", response_model=ClassifyResult)
+async def classify_specializations(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    _member: Member = Depends(require_role(MemberRole.EDITOR)),
+) -> ClassifyResult:
+    """Assign an AI-inferred specialization to every feature that has none."""
+    _require_key()
+    features = await Feature.filter(project_id=project_id, specialization__isnull=True)
+    assignments = await ai.classify_specializations(features)
+    by_id = {f.id: f for f in features}
+    updated: list[int] = []
+    for fid, spec in assignments.items():
+        feature = by_id.get(fid)
+        if feature is None:
+            continue
+        feature.specialization = spec
+        await feature.save()
+        updated.append(feature.id)
+        await audit.record(
+            project_id=project_id,
+            actor=current_user,
+            action=AuditAction.UPDATE,
+            entity_type=EntityType.FEATURE,
+            entity_id=feature.id,
+            summary=f"AI classified specialization → {spec.value}",
+        )
+    return ClassifyResult(classified=len(updated), updated_feature_ids=updated)
 
 
 # --- single-field validation: resolve a (feature|milestone, field, raw value) into a

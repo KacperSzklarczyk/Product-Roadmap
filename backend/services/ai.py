@@ -86,13 +86,21 @@ a good idea. Use 80+ only when the transcript gives explicit quantitative
 signals. Use 40-60 for typical inferred estimates. Use below 40 when 
 you are extrapolating significantly.
 
-effort: person-months as a float > 0. 
+effort: person-months as a float > 0.
 - 0.25: a few days (prompt change, copy update, minor UI tweak)
 - 0.5: about one week (small self-contained feature)
 - 1.0: two to three weeks (standard feature with backend + UI)
 - 2.0: one to two months (significant new capability or integration)
 - 3.0+: multi-month investment (new product surface, major infrastructure)
 Use 1.0 if genuinely unknown.
+
+specialization: the primary engineering discipline that owns the bulk of the work. ALWAYS pick one:
+- frontend: UI, client screens, visualizations, UX-heavy work
+- backend: APIs, data models, business logic, server-side processing (incl. most AI/LLM features)
+- devops: infrastructure, CI/CD, deployment, monitoring, scaling
+- integration: third-party connectors, SSO, imports/exports, webhooks, external APIs
+- testing: QA automation, test harnesses, test-coverage work
+Choose the single discipline that carries the most effort. Do not omit this field.
 
 ## Output instruction
 Call emit_features exactly once with all identified features as an array.
@@ -106,6 +114,7 @@ _FEATURE_ITEM_SCHEMA = {
         "description": {"type": "string"},
         "status": {"type": "string", "enum": [s.value for s in FeatureStatus]},
         "roadmap_bucket": {"type": "string", "enum": [b.value for b in RoadmapBucket]},
+        "specialization": {"type": "string", "enum": [s.value for s in FeatureSpecialization]},
         "reach": {"type": "integer"},
         "impact": {"type": "number", "enum": ALLOWED_IMPACT},
         "confidence": {"type": "integer"},
@@ -115,6 +124,7 @@ _FEATURE_ITEM_SCHEMA = {
         "title",
         "status",
         "roadmap_bucket",
+        "specialization",
         "reach",
         "impact",
         "confidence",
@@ -139,6 +149,13 @@ def _nearest_impact(value: float) -> float:
     return min(ALLOWED_IMPACT, key=lambda allowed: abs(allowed - value))
 
 
+def _parse_specialization(raw: object) -> FeatureSpecialization | None:
+    try:
+        return FeatureSpecialization(str(raw))
+    except ValueError:
+        return None
+
+
 def _normalize(raw: dict) -> FeatureDraft:
     """Clamp AI output into the valid ranges the rest of the system expects."""
     return FeatureDraft(
@@ -146,6 +163,7 @@ def _normalize(raw: dict) -> FeatureDraft:
         description=(raw.get("description") or None),
         status=raw.get("status", FeatureStatus.BACKLOG.value),
         roadmap_bucket=raw.get("roadmap_bucket", RoadmapBucket.LATER.value),
+        specialization=_parse_specialization(raw.get("specialization")),
         reach=max(0, int(raw.get("reach", 0))),
         impact=_nearest_impact(float(raw.get("impact", 1.0))),
         confidence=min(100, max(0, int(raw.get("confidence", 50)))),
@@ -561,3 +579,76 @@ async def fix_finding(
         if block.type == "tool_use" and block.name == "apply_fix":
             return block.input
     return {"summary": "No changes proposed.", "feature_updates": [], "milestone_updates": []}
+
+
+# ---------------------------------------------------------------------------
+# Specialization classification (backfill for features with no discipline set)
+# ---------------------------------------------------------------------------
+CLASSIFY_SYSTEM = """You assign the primary engineering discipline to each product feature for a
+team building GenAI tools for auditors. For EVERY feature id provided, pick the single
+specialization that owns the bulk of the work:
+- frontend: UI, client screens, visualizations, UX-heavy work
+- backend: APIs, data models, business logic, server-side processing (incl. most AI/LLM features)
+- devops: infrastructure, CI/CD, deployment, monitoring, scaling
+- integration: third-party connectors, SSO, imports/exports, webhooks, external APIs
+- testing: QA automation, test harnesses, test-coverage work
+Return exactly one specialization per feature id given. Call assign_specializations exactly once."""
+
+CLASSIFY_TOOL = {
+    "name": "assign_specializations",
+    "description": "Assign one engineering discipline to each feature id.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "assignments": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "feature_id": {"type": "integer"},
+                        "specialization": {
+                            "type": "string",
+                            "enum": [s.value for s in FeatureSpecialization],
+                        },
+                    },
+                    "required": ["feature_id", "specialization"],
+                },
+            }
+        },
+        "required": ["assignments"],
+    },
+}
+
+
+async def classify_specializations(
+    features: list[Feature],
+) -> dict[int, FeatureSpecialization]:
+    """Return {feature_id: specialization} for the given features (typically unspecified ones)."""
+    if not features:
+        return {}
+    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    lines = [
+        f"[{f.id}] {f.title} — {f.description or 'no description'}" for f in features
+    ]
+    user = "Features to classify:\n" + "\n".join(lines)
+    response = await client.messages.create(
+        model=settings.AI_MODEL,
+        max_tokens=1024,
+        system=[{"type": "text", "text": CLASSIFY_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        tools=[CLASSIFY_TOOL],
+        tool_choice={"type": "tool", "name": "assign_specializations"},
+        messages=[{"role": "user", "content": user}],
+    )
+    valid_ids = {f.id for f in features}
+    result: dict[int, FeatureSpecialization] = {}
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "assign_specializations":
+            for a in block.input.get("assignments", []):
+                spec = _parse_specialization(a.get("specialization"))
+                try:
+                    fid = int(a.get("feature_id"))
+                except (TypeError, ValueError):
+                    continue
+                if fid in valid_ids and spec is not None:
+                    result[fid] = spec
+    return result

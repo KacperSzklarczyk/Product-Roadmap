@@ -217,6 +217,23 @@ export function useFixApply(projectId: number) {
   });
 }
 
+export function useClassifySpecializations(projectId: number) {
+  const qc = useQueryClient();
+  const onError = useToastError();
+  return useMutation({
+    mutationFn: () => aiApi.classifySpecializations(projectId),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: qk.features(projectId) });
+      toast.success(
+        res.classified > 0
+          ? `Assigned a specialization to ${res.classified} task${res.classified > 1 ? "s" : ""}`
+          : "All tasks already have a specialization",
+      );
+    },
+    onError,
+  });
+}
+
 // Team composition --------------------------------------------------------
 export function useTeam(projectId: number) {
   return useQuery({
